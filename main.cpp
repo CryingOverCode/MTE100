@@ -221,23 +221,6 @@ void getCoords(float horiz_enc_deg, float pitch_enc_deg, float dist_mm, Point& p
 
 }
 
-void homePitch(){
-  Brain.Screen.clearScreen();
-  Brain.Screen.setCursor(1, 1);
-  Brain.Screen.print("Homing pitch");
-
-  PitchM.setMaxTorque(5, percent); // very low, lots of torque on end stop
-  PitchM.spin(reverse, 15, rpm);
-  wait(300, msec); 
-
-  while (fabs(PitchM.velocity(rpm)) > 1){ wait(10, msec); } // stopped moving means that it is at the stop
-
-  PitchM.setPosition(PITCH_STOP_ANGLE * PITCH_GEAR_RATIO, degrees);
-  PitchM.setMaxTorque(100, percent);
-  PitchM.setStopping(hold); // hold keeps it in pos
-  pitchTo(0);
-}
-
 void pitchTo(float angle){
   PitchM.spinToPosition(angle * PITCH_GEAR_RATIO, degrees, 50, rpm, true);
 }
