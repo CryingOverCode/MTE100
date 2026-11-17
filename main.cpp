@@ -97,11 +97,6 @@ enum struct State {//did we see enums in class? prob not lmfao
   Calibration,
 }
 
-
-using namespace vex;
-// no "using namespace std", std::forward and vex::forward clash and it won't compile
-
-//Global
 std::string c_file_name;
 bool sd_ok = false;              
 bool is_3d = false;              
@@ -134,6 +129,23 @@ void sweep(float maximum_angle, float speed);
 void scanPoint2D(float maximum_angle, float speed);
 void scanPoint3D(float maximum_angle, float speed);
 
+//Assumptions: start of maze is (0,0). Theta is relative to direclty forward of the path. Left-right of init. is x-axis. Front-back of init. is y-axis.
+void find2D(Point2D BotCoord, float DistTheta, float BotTheta, float Dist) {
+	float xVal = BotCoord.x + (sin(DistTheta + BotTheta)*Dist);  
+	float yVal = BotCoord.y + (cos(DistTheta + BotTheta)*Dist); 
+	//figure out a way to account for error and write to some database?
+}
+//Assumptions: start of maze is (0,0,0). Directly downwards is 0 degrees and directly forwards is 0 degrees. Left-right of init. is x-axis. Front-back is y-axis. Up-down is z-axis.
+void find3D(Point3D BotCoord, float DistTheta, float Dist) { //theta2 and theta3 named for 2d and 3d respectively.
+	const float kx = 0; //this is some experimentally determined offset from the 2d position, which is the proper (0,0,0). 
+	const float ky = 0;
+	const float kz = 0;
+	float xVal = kx + BotCoord.x + (Dist*sin(DistTheta)*cos(BotTheta));
+	float yVal = ky + BotCoord.y + (Dist*sin(DistTheta)*sin(BotTheta)); //scanning along the y plane.
+	float zVal = kz + BotCoord.z -1*(Dist*cos(DistTheta)); //*-1 since facing down is positive. Maybe double check the signs and how much each BotCoord is required, esp. z
+}
+
+
 int main() {
   // Initializing Robot Configuration. DO NOT REMOVE!
   vexcodeInit();
@@ -141,28 +153,28 @@ int main() {
 
   homePitch();
 
-  while (true){
-    Brain.Screen.clearScreen();
-    Brain.Screen.setCursor(1, 1);
-    Brain.Screen.print("Up = 2D scan");
-    Brain.Screen.setCursor(2, 1);
-    Brain.Screen.print("Down = 3D scan");
+//   while (true){
+//     Brain.Screen.clearScreen();
+//     Brain.Screen.setCursor(1, 1);
+//     Brain.Screen.print("Up = 2D scan");
+//     Brain.Screen.setCursor(2, 1);
+//     Brain.Screen.print("Down = 3D scan");
 
-    while (!Brain.buttonUp.pressing() && !Brain.buttonDown.pressing()){ wait(10, msec); }
-    is_3d = Brain.buttonDown.pressing();
-    while (Brain.buttonUp.pressing() || Brain.buttonDown.pressing()){ wait(10, msec); }
+//     while (!Brain.buttonUp.pressing() && !Brain.buttonDown.pressing()){ wait(10, msec); }
+//     is_3d = Brain.buttonDown.pressing();
+//     while (Brain.buttonUp.pressing() || Brain.buttonDown.pressing()){ wait(10, msec); }
 
-    Brain.Screen.clearScreen();
-    Brain.Screen.setCursor(1, 1);
-    sd_ok = initSD(); // new file for every scan
-    Brain.Screen.setCursor(2, 1);
-    Brain.Screen.print(is_3d ? "Hold check = stop" : "Scanning");
+//     Brain.Screen.clearScreen();
+//     Brain.Screen.setCursor(1, 1);
+//     sd_ok = initSD(); // new file for every scan
+//     Brain.Screen.setCursor(2, 1);
+//     Brain.Screen.print(is_3d ? "Hold check = stop" : "Scanning");
 
-    if (is_3d){
-      scanPoint3D(140, 20); // random values that passed the vibes test
-    } else{
-      scanPoint2D(140, 20);
-    }
+//     if (is_3d){
+//       scanPoint3D(140, 20); // random values that passed the vibes test
+//     } else{
+//       scanPoint2D(140, 20);
+//     }
   }
 }
 
