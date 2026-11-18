@@ -238,40 +238,28 @@ void pitchTo(float angle){
 }
 
 void sweep(float maximum_angle, float speed){
+  static timer distance_reading_countdown;
 
-  float max_motor_pos = maximum_angle * HORIZ_GEAR_RATIO;
-
-  // start at the end the last sweep finished at, then go to the other end
-  float start = last_went_positive ? max_motor_pos : -max_motor_pos;
-  float finish = -start;
-  bool going_positive = finish > start;
-
-  HorizM.spinToPosition(start, degrees, 100, rpm, true); // does nothing if already there
-
-  if (going_positive){
-    HorizM.spin(forward, speed, rpm);
-  } else{
-    HorizM.spin(reverse, speed, rpm);
+  // Flip direction at the endstops 
+  if (fabs(robot.horizM_enc - robot.horizM_left_endstop) < 1 || fabs(robot.horizM_enc - robot.horizM_right_endstop) < 1){
+    robot.horizM_dir = !robot.horizM_dir;
   }
+  HorizM.spin(robot.horizM_dir ? forward : reverse, speed, rpm);
 
-  timer distance_reading_countdown;
-
-  while ((going_positive && HorizM.position(degrees) < finish) || (!going_positive && HorizM.position(degrees) > finish)){
-    if (distance_reading_countdown.time(msec) >= DISTANCE_INTERVAL_MS){
-
-      distance_reading_countdown.reset();
-
-      if (Dist.isObjectDetected()){ // skip readings with nothing in range
-        Point p = {};
-        getCoords(HorizM.position(degrees), PitchM.position(degrees), Dist.objectDistance(mm), p);
-        bufferWrite(p);
-      }
+  if (distance_reading_countdown.time(msec) >= DISTANCE_INTERVAL_MS){
+    distance_reading_countdown.reset();
+    if (Dist.isObjectDetected()){
+      Point p = {};
+      getCoords(HorizM.position(degrees), PitchM.position(degrees), Dist.objectDistance(mm), p);
+      bufferWrite(p);
     }
-    wait(1, msec);
   }
-  HorizM.stop(brake);
+}
 
-  last_went_positive = going_positive;
+  if (abs(robot.horizM_enc - robot.horizM_left_endstop) < 1 || abs(robot.horizM_enc - robot.horizM_right_endstop) < 1 ){
+    robot.horizM_dir = !robot.horizM_dir;
+  }
+
 }
 
 void scanPoint2D(float maximum_angle, float speed){
