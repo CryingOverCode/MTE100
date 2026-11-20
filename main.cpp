@@ -6,9 +6,6 @@
 #include <math.h>
 #include <string.h>
 
-#include "iq_cpp.h"
-#include <math.h>
-#include <cstdint>
 
 #include "vex.h"
 
@@ -31,10 +28,10 @@ brain Brain;
 
 // Robot configuration code.
 inertial BrainInertial = inertial();
-controller Controller = controller();
+motor HorizM = motor(PORT5, false);
+motor PitchM = motor(PORT2, true);
+distance Dist = distance(PORT9);
 motor Motor1 = motor(PORT1, false);
-motor Motor6 = motor(PORT6, false);
-distance Distance2 = distance(PORT2);
 
 
 // generating and setting random seed
@@ -59,44 +56,27 @@ void vexcodeInit() {
   initializeRandomSeed(); 
 }
 
-
-// define variable for remote controller enable/disable
-bool RemoteControlCodeEnabled = true;
-
 #pragma endregion VEXcode Generated Robot Configuration
 
 //----------------------------------------------------------------------------
-//                                                                            
-//    Module:       main.cpp                                                  
-//    Author:       {author}                                                  
-//    Created:      {date}                                                    
-//    Description:  IQ project                                                
-//                                                                            
+//
+//    Module:       main.cpp
+//    Author:       {author}
+//    Created:      {date}
+//    Description:  IQ project
+//
 //----------------------------------------------------------------------------
 
 // Include the IQ Library
 #include "iq_cpp.h"
+#include <math.h>
+#include <cstdint>
+#include <string>
 
-// Allows for easier use of the VEX Library
 using namespace vex;
+// no "using namespace std", std::forward and vex::forward clash and it won't compile
 
-struct Point2D {
-  float x;
-  float y;
-};
-struct Point3D {
-  float x;
-  float y;
-  float z;
-}
-enum struct State {//did we see enums in class? prob not lmfao 
-  Idle,
-  Teleop,
-  Scan2D,
-  Scan3D,
-  Calibration,
-}
-
+//Global
 std::string c_file_name;
 bool sd_ok = false;              
 bool is_3d = false;              
@@ -108,7 +88,7 @@ const int BUF_SIZE = 64; // 64 readings * 6 bytes -> 384 bytes per buffer. ~ 2.1
 const float HORIZ_GEAR_RATIO = 4;
 const float PITCH_GEAR_RATIO = 30;
 const float PITCH_STOP_ANGLE = -90;
-
+const int MAX_LINE_CHARS = 21; // longest line is "-32768,-32768,-32768\n" = 21 chars
 
 struct Point { // 6 bytes per reading
   int16_t x_mm;
@@ -117,9 +97,7 @@ struct Point { // 6 bytes per reading
 };
 
 Point buffer[BUF_SIZE];
-int buffer_count = 0;
-
-bool initSD();
+int buffer_count sensorCalibration();
 void flushToSD();
 void bufferWrite(const Point& p);
 void getCoords(float horiz_enc_deg, float pitch_enc_deg, float dist_mm, Point& p);
@@ -127,55 +105,38 @@ void homePitch();
 void pitchTo(float angle);
 void sweep(float maximum_angle, float speed);
 void scanPoint2D(float maximum_angle, float speed);
-void scanPoint3D(float maximum_angle, float speed);
+void scanPoint3D(angle, float seed);
 
-//Assumptions: start of maze is (0,0). Theta is relative to direclty forward of the path. Left-right of init. is x-axis. Front-back of init. is y-axis.
-void find2D(Point2D BotCoord, float DistTheta, float BotTheta, float Dist) {
-	float xVal = BotCoord.x + (sin(DistTheta + BotTheta)*Dist);  
-	float yVal = BotCoord.y + (cos(DistTheta + BotTheta)*Dist); 
-	//figure out a way to account for error and write to some database?
-}
-//Assumptions: start of maze is (0,0,0). Directly downwards is 0 degrees and directly forwards is 0 degrees. Left-right of init. is x-axis. Front-back is y-axis. Up-down is z-axis.
-void find3D(Point3D BotCoord, float DistTheta, float Dist) { //theta2 and theta3 named for 2d and 3d respectively.
-	const float kx = 0; //this is some experimentally determined offset from the 2d position, which is the proper (0,0,0). 
-	const float ky = 0;
-	const float kz = 0;
-	float xVal = kx + BotCoord.x + (Dist*sin(DistTheta)*cos(BotTheta));
-	float yVal = ky + BotCoord.y + (Dist*sin(DistTheta)*sin(BotTheta)); //scanning along the y plane.
-	float zVal = kz + BotCoord.z -1*(Dist*cos(DistTheta)); //*-1 since facing down is positive. Maybe double check the signs and how much each BotCoord is required, esp. z
-}
-
+timer timer1;
 
 int main() {
   // Initializing Robot Configuration. DO NOT REMOVE!
-  vexcodeInit();
-  // Begin project code
-
+  vexdeInit();
+  // B
   homePitch();
+egin project code
+  
+  while (true){
+    Brain.Screen.clearScreen();
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("Up = 2D scan");
+    Brain.Screen.setCursor(2, 1);
+    Brain.Seen.print("ensorCalibration();
 
-//   while (true){
-//     Brain.Screen.clearScreen();
-//     Brain.Screen.setCursor(1, 1);
-//     Brain.Screen.print("Up = 2D scan");
-//     Brain.Screen.setCursor(2, 1);
-//     Brain.Screen.print("Down = 3D scan");
+    while (!Brain.buttonUp.pressing() && !Brain.buttonDown.pressing()){ wait(10, msec); }
+    is_3d = Brain.buttonDown.pressing();
+    while (Brain.buttonUp.pressing() || Brain.buttonDown.pressing()){ wait(10, msec); }
 
-//     while (!Brain.buttonUp.pressing() && !Brain.buttonDown.pressing()){ wait(10, msec); }
-//     is_3d = Brain.buttonDown.pressing();
-//     while (Brain.buttonUp.pressing() || Brain.buttonDown.pressing()){ wait(10, msec); }
+    Brain.Screen.clearScreen();
+    Brain.Screen.setCursor(1, 1);
+    sd_ok = initSD(); // new file for every scan
+    Brain.Screen.setCursor(2, 1);
+    Brain.Screen.print(is_3d ? "Hold check = stop" : "Scanning");
 
-//     Brain.Screen.clearScreen();
-//     Brain.Screen.setCursor(1, 1);
-//     sd_ok = initSD(); // new file for every scan
-//     Brain.Screen.setCursor(2, 1);
-//     Brain.Screen.print(is_3d ? "Hold check = stop" : "Scanning");
-
-//     if (is_3d){
-//       scanPoint3D(140, 20); // random values that passed the vibes test
-//     } else{
-//       scanPoint2D(140, 20);
-//     }
-  }
+    if (is_3d){
+      scanPoint3D(140, 20); // random values that passed the vibes test
+    } else{
+      void sensoraliation complete");
 }
 
 bool initSD() {
@@ -202,22 +163,30 @@ bool initSD() {
   return true;
 }
 
+
 void flushToSD() {
+  static char flush_text[BUF_SIZE * MAX_LINE_CHARS + 1]; // static so that it reserves the memory the entire time and we dont suddenly get a crash when we suddenly run out. You can decide whether the static is necessary
+
+  if (buffer_count == 0) return;
+
+  int len = 0;
   for (int i = 0; i < buffer_count; i++) {
     Point p = buffer[i];
-    char line[24];   // longest is "-32768,-32768,-32768\n" = 21 chars
-    int len;
-    if (is_3d){
-      len = snprintf(line, sizeof(line), "%d,%d,%d\n", p.x_mm, p.y_mm, p.z_mm);
-    } else{
-      len = snprintf(line, sizeof(line), "%d,%d\n", p.x_mm, p.y_mm);
-    }
-    printf("%s", line); 
-    if (sd_ok){
-      Brain.SDcard.appendfile(c_file_name.c_str(), (uint8_t*)line, len);
+    int room = (int)sizeof(flush_text) - len;
+    int n;
+    if (is_3d) {
+      n = snprintf(flush_text + len, room, "%d,%d,%d\n", p.x_mm, p.y_mm, p.z_mm);
+    } else {
+      n = snprintf(flush_text + len, room, "%d,%d\n", p.x_mm, p.y_mm);
     }
   }
+
+  fwrite(flush_text, 1, len, stdout);
   fflush(stdout);
+
+  if (sd_ok) {
+    Brain.SDcard.appendfile(c_file_name.c_str(), (uint8_t*)flush_text, len);
+  }
   buffer_count = 0;
 }
 
@@ -229,9 +198,8 @@ void bufferWrite(const Point& p) {
   }
 }
 
-void getCoords(float horiz_enc_deg, float pitch_enc_deg, float dist_mm, Point& p){
+void getCoords(float horiz_enc_deg, float pitch_e
 
-}
 
 void pitchTo(float angle){
   PitchM.spinToPosition(angle * PITCH_GEAR_RATIO, degrees, 50, rpm, true);
@@ -256,12 +224,6 @@ void sweep(float maximum_angle, float speed){
   }
 }
 
-  if (abs(robot.horizM_enc - robot.horizM_left_endstop) < 1 || abs(robot.horizM_enc - robot.horizM_right_endstop) < 1 ){
-    robot.horizM_dir = !robot.horizM_dir;
-  }
-
-}
-
 void scanPoint2D(float maximum_angle, float speed){
   pitchTo(0);
   sweep(maximum_angle, speed);
@@ -279,4 +241,3 @@ void scanPoint3D(float maximum_angle, float speed){
 
   flushToSD(); // write the partial buffer at the end
 }
-
