@@ -113,7 +113,7 @@ const float MM_PER_MOTOR_DEG       = PI_F * WHEEL_DIAMETER_MM / 360.0f * DRIVE_W
 
 //
 const float DISTANCE_INTERVAL_MS = 1000.0 / 30; // 30 Hz max
-const int BUF_SIZE = 64; // 64 readings * 6 bytes -> 384 bytes per buffer. ~ 2.13s of data before an SD card flush
+const int BUF_SIZE = 64; // 64 readings * 8 bytes -> 512 bytes per buffer. ~ 2.13s of data before an SD card flush
 const float HORIZ_GEAR_RATIO = 4;
 const float PITCH_GEAR_RATIO = 30;
 
@@ -144,11 +144,21 @@ const float SENSOR_OFFSET_MM = 100.0f; //how far the sensor sits in front of the
 
 const int MAX_LINE_CHARS = 21; // longest is "-32768,-32768,-32768\n" = 21 chars
 
+const float WALL_MIN_ANGLE = 60.0f; //only readings between these two angles count as looking at a side wall
+const float WALL_MAX_ANGLE = 120.0f;
+const float KP_WALL = 0.02f; //percent of steer per mm of difference between the two walls aka centering sensitivity
+const float WALL_STEER_MAX = CREEP_SPEED - 0.4 * CREEP_SPEED; // kept under CREEP_SPEED so neither wheel goes backwards when trying to turn
+
+const float SENSOR_DELAY_MS = 43.0f;
+const int HIST_SIZE = 64; //at about 10ms a loop this is about 640ms of history
+const int OLD_READING_FREQUENCY = 2; //ms. the main loop is 10ms so this saves one every loop
+
 //note: int16 allows us to store about +- 30 m of max distance which should be chill for now
-struct Point { // 6 bytes per reading
+struct Point { // 8 bytes per reading
   int16_t x_mm;
   int16_t y_mm;
   int16_t z_mm; // stays 0 in 2d
+  int16_t horiz_deg; // sweep angle of the reading. 0 is straight ahead, positive is right, negative is left. only saved in 2d
 };
 
 //everything the scan has to remember between loops. these were all globals before
@@ -162,6 +172,20 @@ struct scan_ctx {
   bool sweep_positive; //true = sweep right, false = sweep left
   float pitch_target;
   timer distance_reading_countdown;
+
+  float lateral_left_avg;
+  float lateral_right_avg;
+
+  float left_sum;
+  float right_sum;
+  int left_count;
+  int right_count;
+  float steer;
+
+  float hist_deg[HIST_SIZE];
+  int hist_timings[HIST_SIZE];
+  int hist_count;
+  int hist_previous_reading;
 };
 
 void sensorCalibration(robot_ctx& robot_context);
@@ -170,6 +194,31 @@ bool pitchTo(float angle);
 bool horizTo(float angle);
 bool pitchCalibration();
 void returnToStart();
+
+void encoder_history(scan_ctx& scan_context){
+  if (Brain.Timer.time(msec) - scan_context.hist_previous_reading >= OLD_READING_FREQUENCY){
+    int c_index = scan_context.hist_count++ % HIST_SIZE;
+    scan_context.hist_deg[c_index] = HorizM.position(degrees) / HORIZ_GEAR_RATIO;
+    scan_context.hist_timings[c_index] = Brain.Timer.time(msec);
+    scan_context.hist_previous_reading = Brain.Timer.time(msec);
+  }
+}
+
+float getCorrectAngle(int data_time, const scan_ctx& scan_context){
+  int wanted_time = data_time - SENSOR_DELAY_MS;
+  int smallest_dif = 9999;
+  int wanted_index = 0;
+
+  for (int i = 0; i < HIST_SIZE; i++){
+    int dif = abs(scan_context.hist_timings[i] - wanted_time);
+    if(dif < smallest_dif){
+      smallest_dif = dif;
+      wanted_index = i;
+    }
+  }
+
+  return scan_context.hist_deg[wanted_index];
+}
 
 //Author: Jijia
 //trick to debounce a button press. I learned this from CRC lmao
@@ -256,19 +305,16 @@ void teleopDrive() {
 }
 
 //Author: Simon
-//scans drive themselves at CREEP_SPEED, and the right stick steers so we can follow a bend in the pipe.
-//only creeps once the sensor is in place and sweeping
 void creepDrive(const scan_ctx& scan_context) {
   if (scan_context.scan_state != ScanState::Sweeping) {
     leftMotor.stop(brake);
     rightMotor.stop(brake);
     return;
   }
-  int turn = Controller.AxisC.position();//C is right stick left/right, same as teleop
+  int turn = Controller.AxisC.position();
   if (abs(turn) < 5) turn = 0; //joystick deadzone
 
-  //full stick only adds or takes CREEP_STEER percent, so its a gentle steer and not a spin
-  float steer = turn * CREEP_STEER / 100.0f;
+  float steer = turn * CREEP_STEER / 100.0f + scan_context.steer;
   leftMotor.spin(forward, CREEP_SPEED + steer, percent);
   rightMotor.spin(forward, CREEP_SPEED - steer, percent);
 }
@@ -495,7 +541,7 @@ void armRobot(robot_ctx& robot_context) {
 
 //Author: Simon
 bool initSD(scan_ctx& scan_context) {
-  const char* header = (scan_context.is_3d) ? "x_mm,y_mm,z_mm\n" : "x_mm,y_mm\n";
+  const char* header = (scan_context.is_3d) ? "x_mm,y_mm,z_mm\n" : "x_mm,y_mm,horiz_deg\n";
   printf("%s", header);
 
   if (!Brain.SDcard.isInserted()) {
@@ -531,7 +577,7 @@ void flushToSD(scan_ctx& scan_context) {
     if (scan_context.is_3d){
       size = snprintf(flush_text + len, room, "%d,%d,%d\n", p.x_mm, p.y_mm, p.z_mm);
     } else{
-      size = snprintf(flush_text + len, room, "%d,%d\n", p.x_mm, p.y_mm);
+      size = snprintf(flush_text + len, room, "%d,%d,%d\n", p.x_mm, p.y_mm, p.horiz_deg);
     }
     if (size > 0 && size < room) len += size; //always fits with this sizing
   }
@@ -632,6 +678,37 @@ bool pitchCalibration() {
   PitchM.setPosition(PITCH_3D_ANGLE * PITCH_GEAR_RATIO, degrees);
   return true;
 }
+
+//Author: Simon
+void selfCenter(float theta, float dist, scan_ctx& scan_context) {
+  float lateral = dist * sinf(theta * DEG_TO_RAD); //sideways part of the reading. negative on the left
+  if (theta >= WALL_MIN_ANGLE && theta <= WALL_MAX_ANGLE) {
+    scan_context.right_sum += lateral;
+    scan_context.right_count++;
+  } else if (theta <= -WALL_MIN_ANGLE && theta >= -WALL_MAX_ANGLE) {
+    scan_context.left_sum += -lateral; //flip the sign so both sides are positive distances
+    scan_context.left_count++;
+  }
+}
+//Author: Simon
+void updateSteer(scan_ctx& scan_context) {
+  if (scan_context.left_count > 0 && scan_context.right_count > 0) {
+    float left_avg = scan_context.left_sum / scan_context.left_count;
+    float right_avg = scan_context.right_sum / scan_context.right_count;
+    float steer = KP_WALL * (right_avg - left_avg); //more room on the right means steer right
+    if (steer > WALL_STEER_MAX) steer = WALL_STEER_MAX;
+    if (steer < -WALL_STEER_MAX) steer = -WALL_STEER_MAX;
+    scan_context.steer = steer;
+  } else {
+    scan_context.steer = 0; //one wall is missing so just go straight
+  }
+  scan_context.left_sum = 0;
+  scan_context.right_sum = 0;
+  scan_context.left_count = 0;
+  scan_context.right_count = 0;
+}
+
+
 //Author: Simon
 void scan(float maximum_angle, float speed, const robot_ctx& robot_context, scan_ctx& scan_context){
   //this was a switch but we cant use break
@@ -644,32 +721,43 @@ void scan(float maximum_angle, float speed, const robot_ctx& robot_context, scan
       //we are sweeping
       float limit = maximum_angle * HORIZ_GEAR_RATIO;
       float pos = (float)HorizM.position(degrees);
-
+      //every time the sweep turns around we have seen both walls once we update the steer
       if (scan_context.sweep_positive && pos >= limit) {
         scan_context.sweep_positive = false;
+        updateSteer(scan_context);
       } else if (!scan_context.sweep_positive && pos <= -limit) {
         scan_context.sweep_positive = true;
+        updateSteer(scan_context);
       }
-
       HorizM.spin(scan_context.sweep_positive ? forward : reverse, speed, rpm);
-
       if (scan_context.distance_reading_countdown.time(msec) >= DISTANCE_INTERVAL_MS){
         scan_context.distance_reading_countdown.clear();
         if (Dist.isObjectDetected()){
           Point p = {};
-          float theta = HorizM.position(degrees) / HORIZ_GEAR_RATIO;
+          float theta = getCorrectAngle(Brain.Timer.time(msec), scan_context); // offset to unstale the stale data
+          float d = Dist.objectDistance(mm); //read once so every function gets the same value
           if (State::Scan2D == robot_context.robot_state){
-            find2D(theta, Dist.objectDistance(mm), robot_context, p);
+            find2D(theta, d, robot_context, p);
+            p.horiz_deg = floatTOint16(roundf(theta)); //save the angle too so we know which wall the point is on
+            selfCenter(theta, d, scan_context); //only in 2d. in 3d the sensor looks at the floor
           } else if (State::Scan3D == robot_context.robot_state){
-            find3D(theta, Dist.objectDistance(mm), robot_context, p);
+            find3D(theta, d, robot_context, p);
           }
           bufferWrite(p, scan_context);
         }
       }
   }
 }
+
 //Author: Jija
 void startScan(State s, robot_ctx& robot_context, scan_ctx& scan_context) {
+
+  scan_context.left_sum = 0; //reset all scan_context in case this is the second time the robot has been put to scan in a single run
+  scan_context.right_sum = 0;
+  scan_context.left_count = 0;
+  scan_context.right_count = 0;
+  scan_context.steer = 0;
+
   robot_context.robot_state = s; //should only be Scan2d or Scan3d
   scan_context.is_3d = (s == State::Scan3D);
   Brain.Screen.clearScreen();
@@ -686,7 +774,7 @@ void startScan(State s, robot_ctx& robot_context, scan_ctx& scan_context) {
 }
 
 //Author: Simon
-//jump straight from one scan to the other. saves what we have first since the new scan gets a new file
+//jump straight from one scan to the other
 void switchScan(State s, robot_ctx& robot_context, scan_ctx& scan_context) {
   leftMotor.stop(brake);
   rightMotor.stop(brake);
@@ -718,6 +806,12 @@ int main() {
   scan_context.scan_state = ScanState::Positioning;
   scan_context.sweep_positive = true;
   scan_context.pitch_target = 0;
+  scan_context.hist_count = 0;
+  scan_context.hist_previous_reading = 0;
+  for (int i = 0; i < HIST_SIZE; i++){
+    scan_context.hist_deg[i] = 0;
+    scan_context.hist_timings[i] = 0;
+  }
 
   PitchM.setStopping(hold);//found this in the vex docs kinda cool
   HorizM.setStopping(brake);
@@ -735,6 +829,7 @@ int main() {
     bool l3 = deBounce(prev_l3, Controller.ButtonL3.pressing());
 
     updateOdometry(robot_context);
+    encoder_history(scan_context);
     if (estop) {
       enterIdle(robot_context, scan_context);
     }
