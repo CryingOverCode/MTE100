@@ -1,14 +1,11 @@
 #pragma region VEXcode Generated Robot Configuration
-// Make sure all required headers are included.
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <math.h>
 #include <string.h>
 
-#include "iq_cpp.h"
-#include <math.h>
-#include <cstdint>
 
 #include "vex.h"
 
@@ -27,7 +24,6 @@ brain Brain;
 #define repeat(iterations)                                                     \
   for (int iterator = 0; iterator < iterations; iterator++)
 // END IQ MACROS
-
 
 // Robot configuration code.
 inertial BrainInertial = inertial();
@@ -61,23 +57,20 @@ void vexcodeInit() {
   initializeRandomSeed(); 
 }
 
-
-// define variable for remote controller enable/disable
-bool RemoteControlCodeEnabled = true;
-
 #pragma endregion VEXcode Generated Robot Configuration
 
 //----------------------------------------------------------------------------
-//                                                                            
-//    Module:       main.cpp                                                  
-//    Author:       {author}                                                  
-//    Created:      {date}                                                    
-//    Description:  IQ project                                                
-//                                                                            
+//
+//    Module:       main.cpp
+//    Author:       {author}
+//    Created:      {date}
+//    Description:  IQ project
+//
 //----------------------------------------------------------------------------
 
 // Include the IQ Library
 #include "iq_cpp.h"
+#include <string>
 
 // Allows for easier use of the VEX Library
 using namespace vex;
@@ -446,9 +439,9 @@ bool initSD() {
     current_name = base + std::to_string(n) + type;
   }
 
-  c_file_name = current_name;
+  scan_context.c_file_name = current_name;
 
-  Brain.SDcard.savefile(c_file_name.c_str(), (uint8_t*)header, strlen(header));
+  Brain.SDcard.savefile(scan_context.c_file_name.c_str(), (uint8_t*)header, strlen(header));
   return true;
 }
 
@@ -467,9 +460,15 @@ void flushToSD() {//might need to change to write everything at once instead of 
     if (sd_ok){
       Brain.SDcard.appendfile(c_file_name.c_str(), (uint8_t*)line, len);//this calls sd card many times which might need to be changed, we want as little write operations as possible. 
     }
+    if (n > 0 && n < room) len += n; //always fits with this sizing
   }
+
+  printf("%s", flush_text);
   fflush(stdout);
-  buffer_count = 0;
+  if (scan_context.sd_ok){
+    Brain.SDcard.appendfile(scan_context.c_file_name.c_str(), (uint8_t*)flush_text, len);
+  }
+  scan_context.buffer_count = 0;
 }
 //Author: Simon
 void bufferWrite(const Point& p) {
@@ -523,6 +522,8 @@ void scan(float maximum_angle, float speed){
       }
       break;
   }
+  PitchM.stop();
+  HorizM.stop();
 }
 //Author: Jija
 void startScan(State s) {
