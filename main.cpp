@@ -122,7 +122,7 @@ const float PITCH_3D_ANGLE = 90; //90 forward from the stop, pointing down
 
 
 const float SWEEP_MAX_ANGLE = 137.0f; //kept 3 deg short of the 140 deg hard stop
-const float SWEEP_SPEED = 100.0f;  // motor speed
+const float SWEEP_SPEED = 50.0f;  // motor speed
 const float PITCH_CAL_FAST = 80.0f; //rpm at the motor when the reading is far from the floor value
 const float PITCH_CAL_SLOW = 5.0f; //rpm at the motor when its right near the floor value. 5 is about 1 deg a second at the sensor
 const float PITCH_CAL_SLOW_ZONE_MM = 50.0f; //within this many mm of the floor value it starts slowing down
@@ -133,7 +133,7 @@ const float RETURN_SPEED = 60.0f; //rpm, used when going back to centre
 const float SLOW_SPEED = 10.0f; //speed for the last bit before a target so we dont overshoot
 const float SLOW_ZONE_DEG = 60.0f; //how close (motor deg) before we slow down
 const float PITCH_ARRIVE_TOLERANCE_DEG = 5.0f; // what counts as pitch has "arrived" to tune
-const float CREEP_SPEED = 4.5f; //percent. bot creeps forward at this speed during a 3d scan
+const float CREEP_SPEED = 3.0f; //percent. bot creeps forward at this speed during a 3d scan
 const float CREEP_STEER = 10.0f; //percent. how much a full push of the right stick speeds up one wheel and slows the other while creeping
 
 //this is some experimentally determined offset from the 2d position, which is the proper (0,0,0).
